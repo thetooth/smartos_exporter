@@ -7,9 +7,11 @@
 package collector
 
 import (
+	"errors"
 	"os/exec"
 	"strconv"
 	"strings"
+
 	// Prometheus Go toolset
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
@@ -17,6 +19,7 @@ import (
 
 // GZZpoolListCollector declares the data type within the prometheus metrics package.
 type GZZpoolListCollector struct {
+	pools               []string
 	gzZpoolListAlloc    *prometheus.GaugeVec
 	gzZpoolListCapacity *prometheus.GaugeVec
 	gzZpoolListFaulty   *prometheus.GaugeVec
@@ -27,8 +30,12 @@ type GZZpoolListCollector struct {
 
 // NewGZZpoolListExporter returns a newly allocated exporter GZZpoolListCollector.
 // It exposes the zpool list command result.
-func NewGZZpoolListExporter() (*GZZpoolListCollector, error) {
+func NewGZZpoolListExporter(pools ...string) (*GZZpoolListCollector, error) {
+	if len(pools) < 1 {
+		return nil, errors.New("No pools provided")
+	}
 	return &GZZpoolListCollector{
+		pools: pools,
 		gzZpoolListAlloc: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "smartos_zpool_alloc_bytes",
 			Help: "ZFS zpool allocated size in bytes.",
@@ -78,7 +85,7 @@ func (e *GZZpoolListCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func (e *GZZpoolListCollector) zpoolList() {
-	out, eerr := exec.Command("zpool", "list", "-p", "zones").Output()
+	out, eerr := exec.Command("zpool", append([]string{"list", "-p"}, e.pools...)...).Output()
 	if eerr != nil {
 		log.Errorf("error on executing zpool: %v", eerr)
 	}
@@ -103,6 +110,7 @@ func (e *GZZpoolListCollector) parseZpoolListOutput(out string) error {
 		if fieldNumber == 11 {
 			n = 1
 		}
+		pool := parsedLine[0]
 		sizeBytes, err := strconv.ParseFloat(parsedLine[1], 64)
 		if err != nil {
 			return err
@@ -127,16 +135,16 @@ func (e *GZZpoolListCollector) parseZpoolListOutput(out string) error {
 		}
 		health := parsedLine[8+n]
 		if (strings.Contains(health, "ONLINE")) == true {
-			e.gzZpoolListFaulty.With(prometheus.Labels{"zpool": "zones"}).Set(0)
+			e.gzZpoolListFaulty.With(prometheus.Labels{"zpool": pool}).Set(0)
 		} else {
-			e.gzZpoolListFaulty.With(prometheus.Labels{"zpool": "zones"}).Set(1)
+			e.gzZpoolListFaulty.With(prometheus.Labels{"zpool": pool}).Set(1)
 		}
 
-		e.gzZpoolListAlloc.With(prometheus.Labels{"zpool": "zones"}).Set(allocBytes)
-		e.gzZpoolListCapacity.With(prometheus.Labels{"zpool": "zones"}).Set(capPercentTrim)
-		e.gzZpoolListFrag.With(prometheus.Labels{"zpool": "zones"}).Set(fragPercentTrim)
-		e.gzZpoolListFree.With(prometheus.Labels{"zpool": "zones"}).Set(freeBytes)
-		e.gzZpoolListSize.With(prometheus.Labels{"zpool": "zones"}).Set(sizeBytes)
+		e.gzZpoolListAlloc.With(prometheus.Labels{"zpool": pool}).Set(allocBytes)
+		e.gzZpoolListCapacity.With(prometheus.Labels{"zpool": pool}).Set(capPercentTrim)
+		e.gzZpoolListFrag.With(prometheus.Labels{"zpool": pool}).Set(fragPercentTrim)
+		e.gzZpoolListFree.With(prometheus.Labels{"zpool": pool}).Set(freeBytes)
+		e.gzZpoolListSize.With(prometheus.Labels{"zpool": pool}).Set(sizeBytes)
 	}
 	return nil
 }

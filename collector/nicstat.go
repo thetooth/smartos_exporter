@@ -10,60 +10,73 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
+
 	// Prometheus Go toolset
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 )
 
-// GZMLAGUsageCollector declares the data type within the prometheus metrics
+// var devices = []string{"ixgbe0", "ixgbe1", "loop0"}
+
+// GZNICUsageCollector declares the data type within the prometheus metrics
 // package.
-type GZMLAGUsageCollector struct {
-	gzMLAGUsageRead  *prometheus.GaugeVec
-	gzMLAGUsageWrite *prometheus.GaugeVec
+type GZNICUsageCollector struct {
+	devices         []string
+	gzNICUsageRead  *prometheus.GaugeVec
+	gzNICUsageWrite *prometheus.GaugeVec
 }
 
-// NewGZMLAGUsageExporter returns a newly allocated exporter GZMLAGUsageCollector.
+// NewGZNICUsageExporter returns a newly allocated exporter GZNICUsageCollector.
 // It exposes the network bandwidth used by the MLAG interface
-func NewGZMLAGUsageExporter() (*GZMLAGUsageCollector, error) {
-	return &GZMLAGUsageCollector{
-		gzMLAGUsageRead: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "smartos_network_mlag_receive_kilobytes",
-			Help: "MLAG (aggr0) receive statistic in KBytes.",
+func NewGZNICUsageExporter(nics ...string) (*GZNICUsageCollector, error) {
+	return &GZNICUsageCollector{
+		devices: nics,
+		gzNICUsageRead: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "smartos_network_receive_kilobytes",
+			Help: "NIC receive statistic in KBytes.",
 		}, []string{"device"}),
-		gzMLAGUsageWrite: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "smartos_network_mlag_transmit_kilobytes",
-			Help: "MLAG (aggr0) transmit statistic in KBytes.",
+		gzNICUsageWrite: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "smartos_network_transmit_kilobytes",
+			Help: "NIC transmit statistic in KBytes.",
 		}, []string{"device"}),
 	}, nil
 }
 
 // Describe describes all the metrics.
-func (e *GZMLAGUsageCollector) Describe(ch chan<- *prometheus.Desc) {
-	e.gzMLAGUsageRead.Describe(ch)
-	e.gzMLAGUsageWrite.Describe(ch)
+func (e *GZNICUsageCollector) Describe(ch chan<- *prometheus.Desc) {
+	e.gzNICUsageRead.Describe(ch)
+	e.gzNICUsageWrite.Describe(ch)
 }
 
 // Collect fetches the stats.
-func (e *GZMLAGUsageCollector) Collect(ch chan<- prometheus.Metric) {
+func (e *GZNICUsageCollector) Collect(ch chan<- prometheus.Metric) {
 	e.nicstat()
-	e.gzMLAGUsageRead.Collect(ch)
-	e.gzMLAGUsageWrite.Collect(ch)
+	e.gzNICUsageRead.Collect(ch)
+	e.gzNICUsageWrite.Collect(ch)
 }
 
-func (e *GZMLAGUsageCollector) nicstat() {
-	// XXX needs enhancement :
-	// use of nicstat will wait 2 seconds in order to collect statistics
-	out, eerr := exec.Command("nicstat", "-i", "aggr0", "1", "2").Output()
-	if eerr != nil {
-		log.Errorf("error on executing nicstat: %v", eerr)
+func (e *GZNICUsageCollector) nicstat() {
+	var wg sync.WaitGroup
+	wg.Add(len(e.devices))
+	for _, device := range e.devices {
+		// Do these in parallel since it takes 2 seconds for each interface
+		go func(device string) {
+			out, eerr := exec.Command("nicstat", "-i", device, "1", "2").Output()
+			if eerr != nil {
+				log.Errorf("error on executing nicstat: %v", eerr)
+			}
+			perr := e.parseNicstatOutput(string(out), device)
+			if perr != nil {
+				log.Errorf("error on parsing nicstat: %v", perr)
+			}
+			wg.Done()
+		}(device)
 	}
-	perr := e.parseNicstatOutput(string(out))
-	if perr != nil {
-		log.Errorf("error on parsing nicstat: %v", perr)
-	}
+	wg.Wait()
 }
 
-func (e *GZMLAGUsageCollector) parseNicstatOutput(out string) error {
+func (e *GZNICUsageCollector) parseNicstatOutput(out, device string) error {
 	outlines := strings.Split(out, "\n")
 	l := len(outlines)
 	for _, line := range outlines[2 : l-1] {
@@ -76,8 +89,8 @@ func (e *GZMLAGUsageCollector) parseNicstatOutput(out string) error {
 		if err != nil {
 			return err
 		}
-		e.gzMLAGUsageRead.With(prometheus.Labels{"device": "aggr0"}).Set(readKb)
-		e.gzMLAGUsageWrite.With(prometheus.Labels{"device": "aggr0"}).Set(writeKb)
+		e.gzNICUsageRead.With(prometheus.Labels{"device": device}).Set(readKb)
+		e.gzNICUsageWrite.With(prometheus.Labels{"device": device}).Set(writeKb)
 	}
 	return nil
 }
