@@ -62,15 +62,16 @@ func (e *GZNICUsageCollector) nicstat() {
 	for _, device := range e.devices {
 		// Do these in parallel since it takes 2 seconds for each interface
 		go func(device string) {
+			defer wg.Done()
 			out, eerr := exec.Command("nicstat", "-i", device, "1", "2").Output()
 			if eerr != nil {
 				log.Errorf("error on executing nicstat: %v", eerr)
+				return
 			}
 			perr := e.parseNicstatOutput(string(out), device)
 			if perr != nil {
 				log.Errorf("error on parsing nicstat: %v", perr)
 			}
-			wg.Done()
 		}(device)
 	}
 	wg.Wait()

@@ -27,8 +27,8 @@ import (
 var (
 	// Global variables
 	listenAddress = kingpin.Flag("server.listen-address", "Address on which to expose metrics and web interface.").Default(":9100").String()
-	pools         = kingpin.Flag("gz.pools", "List of zfs pools to monitor. e.g. zones,tank,bread,milk").Required().Strings()
-	nics          = kingpin.Flag("gz.nics", "List of network interfaces to monitor. e.g. loop0,ixgbe0,ixgbe1").Required().Strings()
+	pools         = kingpin.Flag("gz.pools", "List of zfs pools to monitor. e.g. zones,tank,bread,milk").Required().String()
+	nics          = kingpin.Flag("gz.nics", "List of network interfaces to monitor. e.g. loop0,ixgbe0,ixgbe1").Required().String()
 )
 
 func init() {
@@ -65,6 +65,9 @@ func main() {
 	// check if it is a GZ or a zone
 	gz := isGlobalZone()
 
+	nicsList := strings.Split(*nics, ",")
+	poolsList := strings.Split(*pools, ",")
+
 	// common metrics
 	loadAvg, _ := collector.NewLoadAverageExporter()
 	prometheus.MustRegister(loadAvg)
@@ -83,7 +86,7 @@ func main() {
 		gzFreeMem, _ := collector.NewGZFreeMemExporter()
 		prometheus.MustRegister(gzFreeMem)
 
-		gzNICUsage, _ := collector.NewGZNICUsageExporter(*nics...)
+		gzNICUsage, _ := collector.NewGZNICUsageExporter(nicsList...)
 		prometheus.MustRegister(gzNICUsage)
 
 		cpuUsage, _ := collector.NewGZCPUUsageExporter()
@@ -92,10 +95,10 @@ func main() {
 		gzDiskErrors, _ := collector.NewGZDiskErrorsExporter()
 		prometheus.MustRegister(gzDiskErrors)
 
-		gzZpoolList, _ := collector.NewGZZpoolListExporter(*pools...)
+		gzZpoolList, _ := collector.NewGZZpoolListExporter(poolsList...)
 		prometheus.MustRegister(gzZpoolList)
 
-		gzSMARTList, _ := collector.NewGZDiskSMARTExporter(*pools...)
+		gzSMARTList, _ := collector.NewGZDiskSMARTExporter(poolsList...)
 		prometheus.MustRegister(gzSMARTList)
 	}
 
