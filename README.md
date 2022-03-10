@@ -22,3 +22,14 @@ Flags:
                                Set the log target and format. Example: "logger:syslog?appname=bob&local=7" or "logger:stdout?json=true"
       --version                Show application version.
 ```
+
+```
+# cp ./smartos_exporter /opt/custom/smf/bin/smartos_exporter
+# svccfg import smartos_exporter.xml
+# svccfg -s smartos_exporter
+svc:/smartos_exporter> setprop gz/nics=ixgbe0,loop0
+svc:/smartos_exporter> setprop gz/pools=zones
+svc:/smartos_exporter> end
+# svccfg -s smartos_exporter:default refresh
+# svcadm restart smartos_exporter
+```
