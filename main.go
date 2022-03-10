@@ -13,9 +13,8 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	//  "fmt"
 
-	"github.com/virtua-network/smartos_exporter/collector"
+	"github.com/thetooth/smartos_exporter/collector"
 
 	// Prometheus Go toolset
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,7 +26,9 @@ import (
 
 var (
 	// Global variables
-	listenAddress = kingpin.Flag("web.listen-address", "Address on which to expose metrics and web interface.").Default(":9100").String()
+	listenAddress = kingpin.Flag("server.listen-address", "Address on which to expose metrics and web interface.").Default(":9100").String()
+	pools         = kingpin.Flag("gz.pools", "List of zfs pools to monitor. e.g. zones,tank,bread,milk").Required().Strings()
+	nics          = kingpin.Flag("gz.nics", "List of network interfaces to monitor. e.g. loop0,ixgbe0,ixgbe1").Required().Strings()
 )
 
 func init() {
@@ -82,8 +83,8 @@ func main() {
 		gzFreeMem, _ := collector.NewGZFreeMemExporter()
 		prometheus.MustRegister(gzFreeMem)
 
-		gzMLAGUsage, _ := collector.NewGZMLAGUsageExporter()
-		prometheus.MustRegister(gzMLAGUsage)
+		gzNICUsage, _ := collector.NewGZNICUsageExporter(*nics...)
+		prometheus.MustRegister(gzNICUsage)
 
 		cpuUsage, _ := collector.NewGZCPUUsageExporter()
 		prometheus.MustRegister(cpuUsage)
@@ -91,8 +92,11 @@ func main() {
 		gzDiskErrors, _ := collector.NewGZDiskErrorsExporter()
 		prometheus.MustRegister(gzDiskErrors)
 
-		gzZpoolList, _ := collector.NewGZZpoolListExporter()
+		gzZpoolList, _ := collector.NewGZZpoolListExporter(*pools...)
 		prometheus.MustRegister(gzZpoolList)
+
+		gzSMARTList, _ := collector.NewGZDiskSMARTExporter(*pools...)
+		prometheus.MustRegister(gzSMARTList)
 	}
 
 	// The Handler function provides a default handler to expose metrics
